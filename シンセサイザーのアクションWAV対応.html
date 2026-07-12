@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wave Runner - Audio Visualizer Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0f172a;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: manipulation;
+        }
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        .ui-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            pointer-events: none;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        .preview-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(34, 211, 238, 0.3);
+            border-radius: 8px;
+            padding: 10px;
+            pointer-events: none;
+            width: 180px;
+            z-index: 10;
+        }
+        .preview-title {
+            font-size: 9px;
+            color: #22d3ee;
+            text-transform: uppercase;
+            margin-bottom: 2px;
+            letter-spacing: 0.05em;
+        }
+        .preview-canvas {
+            width: 160px;
+            height: 40px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+        .instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.7);
+            text-align: center;
+            pointer-events: none;
+            z-index: 10;
+        }
+        #countdownOverlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #c084fc;
+            font-size: 8rem;
+            font-weight: 900;
+            pointer-events: none;
+            opacity: 0;
+            transition: transform 0.2s ease-out;
+            text-shadow: 0 0 20px rgba(192, 132, 252, 0.5);
+        }
+        #audioStatus {
+            position: absolute;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #22d3ee;
+            font-size: 12px;
+            opacity: 0.8;
+            z-index: 10;
+        }
+        /* ファイル選択ボタンのスタイル */
+        .control-panel {
+            position: absolute;
+            bottom: 110px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 20;
+            display: flex;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="ui-overlay">
+        <h1 class="text-2xl font-bold italic tracking-tighter">WAVE RUNNER: AUDIO VISUALIZER</h1>
+        <div id="scoreDisplay" class="text-xl font-mono">Score: 0</div>
+        <div id="highScoreDisplay" class="text-sm opacity-70 font-mono">High Score: 0</div>
+        <div id="modeDisplay" class="text-xs text-cyan-400 mt-1 font-bold">MODE: SYNTH GENERATOR</div>
+    </div>
+
+    <div id="countdownOverlay">3</div>
+
+    <div class="preview-panel">
+        <div class="preview-title" id="p1Title">Current Wave (1次波)</div>
+        <canvas id="p1" class="preview-canvas"></canvas>
+        <div class="preview-title">Status</div>
+        <div id="waveTypeName" class="text-[10px] text-white font-bold mb-1 ml-1">SINE</div>
+        <div id="predictionAlert" class="text-[9px] text-purple-400 font-bold mb-2 ml-1 opacity-0 transition-opacity">NEXT: PREDICTING...</div>
+        <div class="preview-title" id="p2Title">Secondary Layer (2次波)</div>
+        <canvas id="p2" class="preview-canvas"></canvas>
+    </div>
+
+    <!-- WAVアップロードと音源コントロール -->
+    <div class="control-panel">
+        <label class="cursor-pointer px-4 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/30 rounded-full font-bold text-xs transition-all shadow-md flex items-center gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+            </svg>
+            WAVファイルをアップロード
+            <input type="file" id="audioFile" accept="audio/wav,audio/mp3,audio/m4a" class="hidden">
+        </label>
+        <button id="synthModeBtn" class="hidden px-4 py-2 bg-slate-800 hover:bg-slate-700 text-purple-400 border border-purple-500/30 rounded-full font-bold text-xs transition-all shadow-md">
+            通常モードに戻る
+        </button>
+    </div>
+
+    <div id="audioStatus">画面をクリックしてサウンド開始 (またはWAVを選択)</div>
+
+    <div class="instructions">
+        [W / Space] ジャンプ | [A / D] 左右移動<br>
+        お好きな音楽ファイル(WAV等)を読み込ませると、曲に合わせたオリジナルステージが作れます！
+    </div>
+
+    <div id="gameOverScreen" class="hidden fixed inset-0 bg-black/80 flex flex-col items-center justify-center text-white z-50">
+        <h2 class="text-5xl font-bold mb-4 tracking-widest">GAME OVER</h2>
+        <p id="finalScore" class="text-2xl mb-8 font-mono">Score: 0</p>
+        <button id="restartBtn" class="px-8 py-3 bg-cyan-500 hover:bg-cyan-400 text-white font-bold rounded-full transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-cyan-500/50">
+            RETRY
+        </button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const highScoreDisplay = document.getElementById('highScoreDisplay');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const finalScoreDisplay = document.getElementById('finalScore');
+        const restartBtn = document.getElementById('restartBtn');
+        const audioStatus = document.getElementById('audioStatus');
+        const waveTypeNameDisp = document.getElementById('waveTypeName');
+        const predictionAlert = document.getElementById('predictionAlert');
+        const countdownOverlay = document.getElementById('countdownOverlay');
+        const modeDisplay = document.getElementById('modeDisplay');
+        const audioFileInput = document.getElementById('audioFile');
+        const synthModeBtn = document.getElementById('synthModeBtn');
+        const p1Title = document.getElementById('p1Title');
+        const p2Title = document.getElementById('p2Title');
+
+        const p1Canvas = document.getElementById('p1');
+        const p2Canvas = document.getElementById('p2');
+        const p1Ctx = p1Canvas.getContext('2d');
+        const p2Ctx = p2Canvas.getContext('2d');
+
+        // --- Audio System ---
+        let audioCtx = null;
+        let mainOsc = null;
+        let mainGain = null;
+
+        // Custom Audio File Mode Variables
+        let isCustomAudioMode = false;
+        let customAudioBuffer = null;
+        let customAudioSource = null;
+        let analyser = null;
+        let audioDataArray = null; // リアルタイムの波形データ用
+        let smoothedVolume = 0;   // なめらかにした音量値
+
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            setupSynthDrone();
+            audioStatus.classList.add('hidden');
+        }
+
+        function setupSynthDrone() {
+            if (mainOsc) return;
+            mainGain = audioCtx.createGain();
+            mainGain.gain.setValueAtTime(0.04, audioCtx.currentTime); 
+            mainGain.connect(audioCtx.destination);
+            
+            mainOsc = audioCtx.createOscillator();
+            mainOsc.type = 'sine';
+            mainOsc.frequency.setValueAtTime(220, audioCtx.currentTime);
+            mainOsc.connect(mainGain);
+            mainOsc.start();
+        }
+
+        // WAVファイルを読み込み、解析する処理
+        audioFileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            initAudio(); // AudioContextの有効化
+            audioStatus.innerText = "ファイルを解析中...";
+            audioStatus.classList.remove('hidden');
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                audioCtx.decodeAudioData(evt.target.result, function(buffer) {
+                    customAudioBuffer = buffer;
+                    isCustomAudioMode = true;
+                    
+                    // シンセ音のミュート
+                    if (mainGain) {
+                        mainGain.gain.setValueAtTime(0, audioCtx.currentTime);
+                    }
+
+                    // アナライザーのセットアップ
+                    analyser = audioCtx.createAnalyser();
+                    analyser.fftSize = 256;
+                    const bufferLength = analyser.frequencyBinCount;
+                    audioDataArray = new Uint8Array(bufferLength);
+
+                    audioStatus.classList.add('hidden');
+                    modeDisplay.innerText = "MODE: WAV VISUALIZER";
+                    p1Title.innerText = "Audio Raw Wave (元音波)";
+                    p2Title.innerText = "Smoothed Terrain (なだらかな地形)";
+                    waveTypeNameDisp.innerText = "CUSTOM WAV";
+                    synthModeBtn.classList.remove('hidden');
+
+                    init(); // ゲームリスタート
+                }, function(err) {
+                    audioStatus.innerText = "デコードに失敗しました。正しい音声ファイルを選択してください。";
+                    console.error(err);
+                });
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        // 通常（シンセジェネレーター）モードに戻す
+        synthModeBtn.addEventListener('click', function() {
+            stopCustomAudio();
+            isCustomAudioMode = false;
+            setupSynthDrone();
+            if (mainGain) mainGain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+            
+            modeDisplay.innerText = "MODE: SYNTH GENERATOR";
+            p1Title.innerText = "Current Wave (1次波)";
+            p2Title.innerText = "Secondary Layer (2次波)";
+            synthModeBtn.classList.add('hidden');
+            init();
+        });
+
+        function playCustomAudio() {
+            if (!isCustomAudioMode || !customAudioBuffer) return;
+            stopCustomAudio();
+
+            customAudioSource = audioCtx.createBufferSource();
+            customAudioSource.buffer = customAudioBuffer;
+            
+            // アナライザーとスピーカーに接続
+            customAudioSource.connect(analyser);
+            analyser.connect(audioCtx.destination);
+            
+            customAudioSource.loop = true;
+            customAudioSource.start(0);
+        }
+
+        function stopCustomAudio() {
+            if (customAudioSource) {
+                try {
+                    customAudioSource.stop();
+                } catch(e) {}
+                customAudioSource = null;
+            }
+        }
+
+        function playJumpSound() {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(900, audioCtx.currentTime + 0.1);
+            g.gain.setValueAtTime(0.08, audioCtx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.12);
+            osc.connect(g);
+            g.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.12);
+        }
+
+        function playGameOverSound() {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+            osc.frequency.linearRampToValueAtTime(40, audioCtx.currentTime + 0.8);
+            g.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.8);
+            osc.connect(g);
+            g.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.8);
+        }
+
+        // --- Game Logic ---
+        let gameState = 'playing'; 
+        let score = 0;
+        let highScore = localStorage.getItem('waveRunnerHighScore') || 0;
+        highScoreDisplay.innerText = `High Score: ${highScore}`;
+
+        const GRAVITY = 0.6;
+        const JUMP_FORCE = -11; 
+        const HORIZONTAL_ACCEL = 0.8;
+        const FRICTION = 0.9;
+        const WAVE_SPEED_BASE = 5;
+        const OBSTACLE_SPAWN_CHANCE = 0.015;
+        const OBSTACLE_MIN_INTERVAL = 60; 
+        const COYOTE_TIME_MAX = 6; 
+        const MAX_JUMPS = 2; 
+
+        const player = {
+            x: 150,
+            y: 0,
+            vx: 0,
+            vy: 0,
+            radius: 15,
+            isGrounded: false,
+            coyoteTimer: 0,
+            rotation: 0,
+            jumpCount: 0
+        };
+
+        const keys = { left: false, right: false };
+        let waveOffset = 0;
+        let globalTime = 0;
+        let lastObstacleSpawnTime = 0;
+        
+        let currentWaveType = 'sine';
+        let nextWaveType = null;
+        let waveTimer = 0;
+        const WAVE_DURATION = 420; 
+        const PREDICTION_TIME = 180; 
+
+        const waveFuncs = {
+            sine: (x) => Math.sin(x),
+            triangle: (x) => {
+                const phase = (x % (Math.PI * 2)) / (Math.PI * 2);
+                return phase < 0.5 ? (phase * 4 - 1) : (3 - phase * 4);
+            },
+            square: (x) => {
+                const s = Math.sin(x);
+                return Math.atan(s * 10) / (Math.PI / 2) * 0.9;
+            },
+            sawtooth: (x) => {
+                return ((x % (Math.PI * 2)) / Math.PI) - 1;
+            },
+            multisine: (x) => {
+                return (Math.sin(x) + Math.sin(x * 1.5) * 0.5 + Math.sin(x * 3) * 0.2) / 1.7;
+            }
+        };
+
+        const waveTypes = ['sine', 'triangle', 'square', 'sawtooth', 'multisine'];
+
+        function init() {
+            resize();
+            waveOffset = 0;
+            globalTime = 0;
+            lastObstacleSpawnTime = 0;
+            waveTimer = 0;
+            
+            if (!isCustomAudioMode) {
+                currentWaveType = 'sine';
+                nextWaveType = getRandomWaveType(currentWaveType);
+            } else {
+                playCustomAudio();
+            }
+
+            player.x = 150;
+            player.y = canvas.height / 2;
+            player.vx = 0;
+            player.vy = 0;
+            player.coyoteTimer = 0;
+            player.jumpCount = 0;
+            score = 0;
+            obstacles = [];
+            gameState = 'playing';
+            gameOverScreen.classList.add('hidden');
+            predictionAlert.style.opacity = '0';
+            countdownOverlay.style.opacity = '0';
+            
+            if (!isCustomAudioMode && mainGain && audioCtx) {
+                mainGain.gain.setTargetAtTime(0.04, audioCtx.currentTime, 0.1);
+            }
+            animate();
+        }
+
+        function getRandomWaveType(exclude) {
+            const filtered = waveTypes.filter(t => t !== exclude);
+            return filtered[Math.floor(Math.random() * filtered.length)];
+        }
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            p1Canvas.width = 160;
+            p1Canvas.height = 40;
+            p2Canvas.width = 160;
+            p2Canvas.height = 40;
+        }
+
+        window.addEventListener('resize', resize);
+
+        function getWaveComponent(x, offset, freq, amp, type) {
+            const func = waveFuncs[type] || waveFuncs.sine;
+            return func((x + offset) * freq) * amp;
+        }
+
+        // 地形の高さを計算するメインの関数
+        function getHeightAt(x, type = currentWaveType, specificOffset = null) {
+            const centerY = canvas.height / 2;
+            const currentOffset = specificOffset !== null ? specificOffset : waveOffset;
+
+            if (isCustomAudioMode && audioDataArray) {
+                // WAVファイルのリアルタイム音量解析値を使った動的波形
+                // アナライザーの周波数データを合成して滑らかな地形を作ります
+                let sum = 0;
+                const waveSampleLength = audioDataArray.length;
+                
+                // 特定のX位置に対応する周波数帯をマップし、干渉させて波を作る
+                for (let i = 0; i < 8; i++) {
+                    const val = audioDataArray[i] / 255;
+                    // なだらかにするために、周波数を低く設定し(0.005〜0.02)、正弦波でブレンドする
+                    sum += Math.sin((x + currentOffset) * (0.004 + i * 0.003)) * val * 45;
+                }
+                
+                // リアルタイムの低音ビートによる全体の揺れ（なだらかさを保ちつつダイナミックに）
+                const bassVisualValue = (audioDataArray[0] + audioDataArray[1]) / 2;
+                const targetBass = (bassVisualValue / 255) * 50;
+                smoothedVolume = smoothedVolume * 0.92 + targetBass * 0.08; // ローパスをかけて激しいスパイクを滑らかにする
+
+                // 土台として大きなゆるいサイン波をブレンド
+                const baseWave = Math.sin((x + currentOffset) * 0.003) * (80 + smoothedVolume);
+                
+                return {
+                    y: centerY + baseWave + sum,
+                    type: 'custom',
+                    freq: 0.01
+                };
+            } else {
+                // 通常モード（シンセ自動生成）
+                const amp1 = 75 + Math.sin(globalTime * 0.01) * 10;
+                const freq1 = 0.008 + Math.cos(globalTime * 0.006) * 0.0015;
+                
+                const amp2 = 15 + Math.sin(globalTime * 0.02) * 5;
+                const freq2 = 0.03;
+
+                const h1 = getWaveComponent(x, currentOffset, freq1, amp1, type);
+                const h2 = getWaveComponent(x, currentOffset * 0.6, freq2, amp2, 'sine');
+                const hFloat = Math.sin(globalTime * 0.05) * 6; 
+
+                return {
+                    y: centerY + h1 + h2 + hFloat,
+                    type: type,
+                    freq: freq1
+                };
+            }
+        }
+
+        function jump() {
+            initAudio(); 
+            if (gameState !== 'playing') return;
+            if (player.isGrounded || player.coyoteTimer > 0) {
+                player.vy = JUMP_FORCE;
+                player.isGrounded = false;
+                player.coyoteTimer = 0;
+                player.jumpCount = 1;
+                playJumpSound();
+            } 
+            else if (player.jumpCount < MAX_JUMPS) {
+                player.vy = JUMP_FORCE * 0.85; 
+                player.jumpCount++;
+                playJumpSound();
+            }
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' || e.code === 'KeyW' || e.code === 'ArrowUp') jump();
+            if (e.code === 'KeyA' || e.code === 'ArrowLeft') keys.left = true;
+            if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = true;
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'KeyA' || e.code === 'ArrowLeft') keys.left = false;
+            if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = false;
+        });
+        window.addEventListener('mousedown', jump);
+        window.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            jump();
+        }, { passive: false });
+
+        restartBtn.addEventListener('click', init);
+
+        let obstacles = [];
+
+        function update() {
+            if (gameState !== 'playing') return;
+
+            globalTime += 1;
+            
+            // WAVデコード中はアナライザーから最新の値を取得
+            if (isCustomAudioMode && analyser) {
+                analyser.getByteFrequencyData(audioDataArray);
+            }
+
+            // 難易度のスケーリング
+            const currentSpeed = WAVE_SPEED_BASE + Math.min(6, score / 12000);
+            waveOffset += currentSpeed;
+            score += 1;
+            scoreDisplay.innerText = `Score: ${Math.floor(score / 10)}`;
+
+            // --- 通常モード時のカウントダウンと波形切り替えの管理 ---
+            if (!isCustomAudioMode) {
+                waveTimer += 1;
+                const timeUntilChange = WAVE_DURATION - waveTimer;
+                
+                if (timeUntilChange <= PREDICTION_TIME) {
+                    predictionAlert.style.opacity = '1';
+                    predictionAlert.innerText = `NEXT: ${nextWaveType.toUpperCase()}`;
+                    
+                    const secondsLeft = Math.ceil(timeUntilChange / 60);
+                    if (secondsLeft > 0) {
+                        if (countdownOverlay.innerText !== secondsLeft.toString()) {
+                            countdownOverlay.innerText = secondsLeft;
+                            countdownOverlay.style.transform = 'translate(-50%, -50%) scale(1.5)';
+                            setTimeout(() => {
+                                countdownOverlay.style.transform = 'translate(-50%, -50%) scale(1)';
+                            }, 50);
+                        }
+                        countdownOverlay.style.opacity = (1 - (timeUntilChange % 60) / 60) * 0.4;
+                    }
+                } else {
+                    predictionAlert.style.opacity = '0';
+                    countdownOverlay.style.opacity = '0';
+                }
+
+                if (waveTimer >= WAVE_DURATION) {
+                    currentWaveType = nextWaveType;
+                    nextWaveType = getRandomWaveType(currentWaveType);
+                    waveTimer = 0;
+                    waveTypeNameDisp.innerText = currentWaveType.toUpperCase();
+                    countdownOverlay.style.opacity = '0';
+                }
+            }
+
+            // --- 左右移動 ---
+            if (keys.left) player.vx -= HORIZONTAL_ACCEL;
+            if (keys.right) player.vx += HORIZONTAL_ACCEL;
+            player.vx *= FRICTION;
+            player.x += player.vx;
+
+            if (player.x < player.radius) { player.x = player.radius; player.vx = 0; }
+            if (player.x > canvas.width - player.radius) { player.x = canvas.width - player.radius; player.vx = 0; }
+
+            // --- 垂直移動 & めり込み防止の更新 ---
+            player.vy += GRAVITY;
+            player.y += player.vy;
+
+            const terrain = getHeightAt(player.x);
+            const groundY = terrain.y - player.radius;
+            
+            if (player.y >= groundY) {
+                if (player.vy >= 0) {
+                    player.y = groundY; 
+                    player.vy = 0;
+                    player.isGrounded = true;
+                    player.coyoteTimer = COYOTE_TIME_MAX;
+                    player.jumpCount = 0;
+                }
+            } else {
+                const SNAP_THRESHOLD = 10;
+                if (groundY - player.y < SNAP_THRESHOLD && player.vy > 0) {
+                    player.y = groundY;
+                    player.vy = 0;
+                    player.isGrounded = true;
+                    player.coyoteTimer = COYOTE_TIME_MAX;
+                    player.jumpCount = 0;
+                } else {
+                    player.isGrounded = false;
+                    if (player.coyoteTimer > 0) player.coyoteTimer--;
+                }
+            }
+
+            // Audio Updates（シンセモードのみ）
+            if (!isCustomAudioMode && mainOsc && audioCtx) {
+                const targetFreq = 180 + (terrain.freq * 10000);
+                mainOsc.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.1);
+                let audioType = (currentWaveType === 'multisine') ? 'sine' : currentWaveType;
+                if (mainOsc.type !== audioType) mainOsc.type = audioType;
+            }
+
+            player.rotation += (player.isGrounded ? (player.vx * 0.05 + 0.1) : 0.05);
+
+            // 障害物の生成（WAVビート時、低音が弾けたタイミングで増やすことでより楽しくなります）
+            let beatBonusChance = 0;
+            if (isCustomAudioMode && audioDataArray) {
+                // 低音部分が一定閾値を超えたら障害物が出現しやすくなる
+                if (audioDataArray[0] > 200) {
+                    beatBonusChance = 0.025;
+                }
+            }
+
+            if (globalTime - lastObstacleSpawnTime > OBSTACLE_MIN_INTERVAL) {
+                const currentChance = OBSTACLE_SPAWN_CHANCE + beatBonusChance + Math.min(0.015, score / 350000);
+                if (Math.random() < currentChance) {
+                    obstacles.push({
+                        spawnOffset: waveOffset + canvas.width + 100, 
+                        size: 15 + Math.random() * 20
+                    });
+                    lastObstacleSpawnTime = globalTime;
+                }
+            }
+
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const obs = obstacles[i];
+                const screenX = obs.spawnOffset - waveOffset;
+                const obsY = getHeightAt(screenX).y;
+                const dx = screenX - player.x;
+                const dy = obsY - (player.y + player.radius);
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance < player.radius + obs.size * 0.45) gameOver();
+                if (screenX < -100) obstacles.splice(i, 1);
+            }
+
+            // 右上ミニプレビュー表示の更新
+            updatePreviews();
+        }
+
+        // プレビューのリアルタイムアップデート
+        function updatePreviews() {
+            if (isCustomAudioMode && audioDataArray) {
+                // 1. Raw Wave プレビュー（ギザギザした生波形）
+                p1Ctx.clearRect(0, 0, p1Canvas.width, p1Canvas.height);
+                p1Ctx.beginPath();
+                p1Ctx.strokeStyle = '#ef4444';
+                p1Ctx.lineWidth = 1;
+                for (let i = 0; i < p1Canvas.width; i++) {
+                    const index = Math.floor((i / p1Canvas.width) * audioDataArray.length);
+                    const val = audioDataArray[index] / 255;
+                    const y = p1Canvas.height - (val * p1Canvas.height);
+                    if (i === 0) p1Ctx.moveTo(i, y);
+                    else p1Ctx.lineTo(i, y);
+                }
+                p1Ctx.stroke();
+
+                // 2. Smoothed Terrain プレビュー（ゲームに使うなめらかなサイン合成地形）
+                p2Ctx.clearRect(0, 0, p2Canvas.width, p2Canvas.height);
+                p2Ctx.beginPath();
+                p2Ctx.strokeStyle = '#22d3ee';
+                p2Ctx.lineWidth = 1.5;
+                for (let x = 0; x < p2Canvas.width; x++) {
+                    const y = (p2Canvas.height / 2) + (Math.sin(x * 0.1) * (10 + smoothedVolume * 0.2));
+                    if (x === 0) p2Ctx.moveTo(x, y);
+                    else p2Ctx.lineTo(x, y);
+                }
+                p2Ctx.stroke();
+            } else {
+                // 通常モード用
+                drawPreview(p1Ctx, p1Canvas.width, p1Canvas.height, waveOffset, 0.01, 80, currentWaveType, '#22d3ee');
+                drawPreview(p2Ctx, p2Canvas.width, p2Canvas.height, waveOffset * 0.6, 0.03, 20, 'sine', '#818cf8');
+            }
+        }
+
+        function drawPreview(pCtx, width, height, offset, freq, amp, type, color) {
+            pCtx.clearRect(0, 0, width, height);
+            pCtx.beginPath();
+            pCtx.strokeStyle = color;
+            pCtx.lineWidth = 1.5;
+            for (let x = 0; x < width; x++) {
+                const y = (height / 2) + getWaveComponent(x * 2.5, offset, freq, amp * 0.3, type);
+                if (x === 0) pCtx.moveTo(x, y);
+                else pCtx.lineTo(x, y);
+            }
+            pCtx.stroke();
+        }
+
+        function gameOver() {
+            gameState = 'gameOver';
+            playGameOverSound();
+            countdownOverlay.style.opacity = '0';
+            stopCustomAudio(); // ゲームオーバー時に再生を止める
+            if (mainGain && audioCtx) mainGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.2);
+            finalScoreDisplay.innerText = `Score: ${Math.floor(score / 10)}`;
+            gameOverScreen.classList.remove('hidden');
+            if (Math.floor(score / 10) > highScore) {
+                highScore = Math.floor(score / 10);
+                localStorage.setItem('waveRunnerHighScore', highScore);
+                highScoreDisplay.innerText = `High Score: ${highScore}`;
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 背景装飾波
+            drawWave(`rgba(51, 65, 85, 0.1)`, 1, 60, currentWaveType);
+
+            // カウントダウン予兆（通常モードのみ）
+            if (!isCustomAudioMode) {
+                const timeUntilChange = WAVE_DURATION - waveTimer;
+                if (timeUntilChange <= PREDICTION_TIME) {
+                    const opacity = (1 - (timeUntilChange / PREDICTION_TIME)) * 0.45;
+                    drawWave(`rgba(192, 132, 252, ${opacity})`, 2, 0, nextWaveType);
+                }
+            }
+
+            // 障害物
+            obstacles.forEach(obs => {
+                const screenX = obs.spawnOffset - waveOffset;
+                const obsY = getHeightAt(screenX).y;
+                ctx.save();
+                ctx.translate(screenX, obsY);
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = '#ef4444';
+                ctx.fillStyle = '#ef4444';
+                ctx.beginPath();
+                ctx.moveTo(0, -obs.size);
+                ctx.lineTo(obs.size/2, 0);
+                ctx.lineTo(-obs.size/2, 0);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            });
+
+            // メイン地形の描画
+            const hue = isCustomAudioMode ? 260 : (180 + Math.sin(globalTime * 0.01) * 30); // WAVモード時は神秘的な紫色ベースに
+            drawWave(`hsl(${hue}, 80%, 50%)`, 4, 0, currentWaveType, true);
+
+            // プレイヤー
+            ctx.save();
+            ctx.translate(player.x, player.y);
+            ctx.rotate(player.rotation);
+            ctx.shadowBlur = player.jumpCount > 0 ? 30 : 15;
+            ctx.shadowColor = player.jumpCount === 2 ? '#22d3ee' : '#fff';
+            
+            ctx.beginPath();
+            ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+            
+            // 目の描画
+            ctx.fillStyle = '#0f172a';
+            ctx.beginPath();
+            ctx.arc(6, -4, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        function drawWave(color, lineWidth, xOffset, waveType, fill = false) {
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = lineWidth;
+            for (let x = 0; x <= canvas.width; x += 6) {
+                const y = getHeightAt(x + xOffset, waveType).y;
+                if (x === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            
+            if (fill) {
+                ctx.lineTo(canvas.width, canvas.height);
+                ctx.lineTo(0, canvas.height);
+                ctx.closePath();
+                const fillGrad = ctx.createLinearGradient(0, canvas.height/2, 0, canvas.height);
+                fillGrad.addColorStop(0, color.replace('hsl', 'hsla').replace(')', ', 0.2)'));
+                fillGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                ctx.fillStyle = fillGrad;
+                ctx.fill();
+            }
+        }
+
+        function animate() {
+            update();
+            draw();
+            if (gameState === 'playing') requestAnimationFrame(animate);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
